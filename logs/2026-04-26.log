@@ -1,0 +1,32 @@
+﻿[2026-04-26 21:28:04] [Success] Application initialized
+[2026-04-26 21:28:13] [Success] Imported 8 recipients
+[2026-04-26 21:28:13] [Info] Attempting to resolve names via Outlook Address Book...
+[2026-04-26 21:28:13] [Success] Resolved 0 name(s) successfully
+[2026-04-26 21:28:19] [Success] Setup loaded from: C:\Users\qdc\Desktop\later.json
+[2026-04-26 21:28:43] [Info] Starting email send process...
+[2026-04-26 21:28:43] [Success] Email 1/7 sent (aaron.suarez@scheuss-partner.ch)
+[2026-04-26 21:28:45] [Success] Email 2/7 sent (asu@scheuss-partner.ch)
+[2026-04-26 21:28:47] [Success] Email 3/7 sent (asua87@hotmail.com)
+[2026-04-26 21:28:47] [Warning] Batch threshold reached. Pausing for 1 minute(s)...
+[2026-04-26 21:28:54] [Warning] Mailing process stopped.
+[2026-04-26 21:30:15] [Success] Application initialized
+[2026-04-26 21:30:28] [Success] Setup loaded from: C:\Users\qdc\Desktop\later.json
+[2026-04-26 21:31:38] [Info] Starting email send process...
+[2026-04-26 21:31:38] [Success] Email 1/7 sent (Attachments: BackupOrder_ORD-3913729-Z4X4 - Kopie (2).xlsx, BackupOrder_ORD-3913729-Z4X4 - Kopie (3).xlsx, BackupOrder_ORD-3913729-Z4X4 - Kopie (4).xlsx, BackupOrder_ORD-3913729-Z4X4 - Kopie.xlsx, BackupOrder_ORD-3913729-Z4X4.xlsx) (aaron.suarez@scheuss-partner.ch)
+[2026-04-26 21:31:41] [Success] Email 2/7 sent (Attachments: BackupOrder_ORD-3643150-D6F2.xlsx) (asu@scheuss-partner.ch)
+[2026-04-26 21:31:43] [Success] Email 3/7 sent (Attachments: BackupOrder_ORD-3860822-Z9S9.xlsx) (asua87@hotmail.com)
+[2026-04-26 21:31:43] [Warning] Batch threshold reached. Pausing for 1 minute(s)...
+[2026-04-26 21:32:43] [Info] Resuming batch...
+[2026-04-26 21:32:45] [Success] Email 4/7 sent (Attachments: BackupOrder_ORD-3901525-F8J8.xlsx) (quadecausa@hotmail.com)
+[2026-04-26 21:32:47] [Success] Email 5/7 sent (Attachments: BackupOrder_ORD-3935638-S1B7.xlsx) (admasu@zkj.ch)
+[2026-04-26 21:32:49] [Success] Email 6/7 sent (Attachments: BackupOrder_ORD-1803247-B6R8.xlsx) (admasu@molecularpartners.com)
+[2026-04-26 21:32:49] [Warning] Batch threshold reached. Pausing for 1 minute(s)...
+[2026-04-26 21:33:24] [Warning] Mailing process stopped.
+[2026-04-26 21:35:03] [Success] Application initialized
+[2026-04-26 21:35:20] [Success] Setup loaded from: C:\Users\qdc\Desktop\later.json
+[2026-04-26 21:35:45] [Info] Starting email send process...
+[2026-04-26 21:35:45] [Success] Email 1/7 sent (Attachments: BackupOrder_ORD-3913729-Z4X4 - Kopie (2).xlsx, BackupOrder_ORD-3913729-Z4X4 - Kopie (3).xlsx, BackupOrder_ORD-3913729-Z4X4 - Kopie (4).xlsx, BackupOrder_ORD-3913729-Z4X4 - Kopie.xlsx, BackupOrder_ORD-3913729-Z4X4.xlsx) (aaron.suarez@scheuss-partner.ch)
+[2026-04-26 21:35:47] [Success] Email 2/7 sent (Attachments: BackupOrder_ORD-3643150-D6F2.xlsx) (asu@scheuss-partner.ch)
+[2026-04-26 21:35:49] [Success] Email 3/7 sent (Attachments: BackupOrder_ORD-3860822-Z9S9.xlsx) (asua87@hotmail.com)
+[2026-04-26 21:35:49] [Warning] Batch threshold reached. Pausing for 1 minute(s)...
+[2026-04-26 21:35:54] [Warning] Mailing process stopped.

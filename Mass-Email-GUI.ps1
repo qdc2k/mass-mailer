@@ -241,7 +241,16 @@ function Log-Entry {
     $logMessage = "[$timestamp] [$Level] $Message"
     if ($Email) { $logMessage += " ($Email)" }
     
-    $Global:LogEntries += $logMessage
+    [void]$Global:LogEntries.Add($logMessage)
+
+    # File Logging to \logs\ folder
+    try {
+        $logDir = Join-Path $PSScriptRoot "logs"
+        if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
+        $logFile = Join-Path $logDir "$((Get-Date).ToString('yyyy-MM-dd')).log"
+        $logMessage | Out-File -FilePath $logFile -Append -Encoding UTF8
+    }
+    catch {}
     
     $color = switch ($Level) {
         "Success" { $Config.ThemeColors.Success }
@@ -253,14 +262,12 @@ function Log-Entry {
     if ($Global:LogTextBox) {
         try {
             $run = New-Object System.Windows.Documents.Run
-            $run.Text = $logMessage + "`n"
+            $run.Text = $logMessage
             $run.Foreground = ConvertTo-Brush $color
             
-            if ($Global:LogTextBox.Document.Blocks.Count -eq 0) {
-                $para = New-Object System.Windows.Documents.Paragraph
-                $Global:LogTextBox.Document.Blocks.Add($para)
-            }
-            $Global:LogTextBox.Document.Blocks[0].Inlines.Add($run)
+            $para = New-Object System.Windows.Documents.Paragraph
+            $para.Inlines.Add($run)
+            [void]$Global:LogTextBox.Document.Blocks.Add($para)
             $Global:LogTextBox.ScrollToEnd()
         }
         catch { }
@@ -853,12 +860,17 @@ function Send-NextEmailTick {
         
         $Mail.Send()
         $recipient.Status = "Sent"
-        Log-Entry "Email $currentDisplay/$total sent" "Success" $recipient.Email
+        $attachmentLog = ""
+        if ($attachments) {
+            $attachmentNames = $attachments | ForEach-Object { Split-Path $_ -Leaf }
+            $attachmentLog = " (Attachments: $($attachmentNames -join ', '))"
+        }
+        Log-Entry "Email $currentDisplay/$total sent$attachmentLog" "Success" $recipient.Email
         $Global:SuccessCount++
     }
     catch {
         $recipient.Status = "Failed"
-        Log-Entry "Failed to send: $_" "Error" $recipient.Email
+        Log-Entry "Failed to send: $($_.Exception.Message)" "Error" $recipient.Email
         $Global:ErrorCount++
     }
 
@@ -900,6 +912,8 @@ function Send-NextEmailTick {
 function Stop-SendingProcess {
     if ($Global:SendTimer) { $Global:SendTimer.Stop() }
     $Global:SendStatus = "Idle"
+    Log-Entry "Mailing process stopped." "Warning"
+    
     try {
         if ($Global:OutlookApp) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Global:OutlookApp) | Out-Null }
     }
