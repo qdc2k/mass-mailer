@@ -773,7 +773,22 @@ function Send-MassEmails {
     $Global:ErrorCount = 0
     $Global:BatchSentCount = 0
     $Global:BodyTemplate = Get-WebViewContent
-    $Global:OutlookApp = New-Object -ComObject Outlook.Application
+    
+    try {
+        # Attempt to initialize Outlook COM
+        $Global:OutlookApp = New-Object -ComObject Outlook.Application -ErrorAction Stop
+    }
+    catch {
+        Log-Entry "Could not connect to Outlook. This script requires 'Classic Outlook'." "Error"
+        [System.Windows.MessageBox]::Show(
+            "Classic Outlook (Desktop App) was not found.`n`nNote: The 'New Outlook' does not support automation scripts. Please switch back to Classic Outlook or ensure it is installed.",
+            "Outlook Connection Error",
+            "Ok",
+            "Error"
+        )
+        Stop-SendingProcess
+        return
+    }
     
     # UI Preparation
     $Global:SendButton.Content = "Stop Sending"
@@ -1008,9 +1023,7 @@ function Export-SendLog {
 $window = New-Object System.Windows.Window
 $window.Title = $Config.WindowTitle
 $window.Width = 1000 # Keep width as is
-$window.Height = 855
-$window.MinWidth = 1000
-$window.MinHeight = 855
+$window.Height = 815
 $window.Background = ConvertTo-Brush $Config.ThemeColors.DarkBg
 $window.Foreground = ConvertTo-Brush $Config.ThemeColors.Foreground
 $window.WindowStartupLocation = "CenterScreen"
@@ -1057,9 +1070,9 @@ $contentStack.Margin = "8,8,8,8"
 # Clean Grid RowDefinitions (8 rows total)
 [void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 0: Recipients Label
 [void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 1: Buttons Panel
-[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "*"; MinHeight = 150 })) # 2: Recipient Grid (STRETCH)
+[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "*"; MinHeight = 150 })) # 2: Recipient Grid
 [void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 3: Splitter
-[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "2*"; MinHeight = 250 })) # 4: Editor Container (STRETCH MORE)
+[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "3*"; MinHeight = 180 })) # 4: Editor Container
 
 # Main Section Title
 $recLabelMain = New-ThemedLabel "Recipients & Attachments" 13
@@ -1169,7 +1182,7 @@ $clearBtn.Add_Click({ Clear-AllAttachments })
 
 # Grid
 $Global:RecipientGrid = New-ThemedDataGrid
-$Global:RecipientGrid.MinHeight = 150
+$Global:RecipientGrid.MinHeight = 25
 $Global:RecipientGrid.VerticalAlignment = "Stretch"
 
 $col1 = New-Object System.Windows.Controls.DataGridTextColumn
@@ -1210,6 +1223,16 @@ $col4.Width = 80
 
 [void]$contentStack.Children.Add($Global:RecipientGrid)
 
+# Add GridSplitter for vertical resizing between Recipients and Editor
+$gridSplitter = New-Object System.Windows.Controls.GridSplitter
+$gridSplitter.Height = 6
+$gridSplitter.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+$gridSplitter.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+$gridSplitter.Background = ConvertTo-Brush $Config.ThemeColors.AccentBg
+$gridSplitter.ShowsPreview = $true
+[System.Windows.Controls.Grid]::SetRow($gridSplitter, 3)
+[void]$contentStack.Children.Add($gridSplitter)
+
 # Handle double-click on Attachment column to trigger picker
 $Global:RecipientGrid.Add_MouseDoubleClick({
         if ($this.CurrentColumn -and $this.CurrentColumn.Header -eq "Attachment") {
@@ -1239,24 +1262,27 @@ $editorGroupGrid = New-Object System.Windows.Controls.Grid
 [System.Windows.Controls.Grid]::SetRow($editorGroupGrid, 4)
 [void]$contentStack.Children.Add($editorGroupGrid)
 
-[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 0: Subject Label
-[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 1: Subject TB
-[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 2: Body Label
-[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 3: Toolbar
-[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "*" }))    # 4: WebView
+[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 0: Header (Subject/Toolbar)
+[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "*"; MinHeight = 100 })) # 1: Message Body (WebView)
+[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 2: Body Splitter
+[void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "0.1*" })) # 3: Bottom Spacer
+
+# Group header elements into a stack for Row 0
+$editorHeaderStack = New-Object System.Windows.Controls.StackPanel
+$editorHeaderStack.Orientation = "Vertical"
+[System.Windows.Controls.Grid]::SetRow($editorHeaderStack, 0)
+[void]$editorGroupGrid.Children.Add($editorHeaderStack)
 
 # Subject
 $subjLabel = New-ThemedLabel "Subject" 13
 $subjLabel.FontWeight = "Bold"
 [void]$subjLabel.SetValue([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(0, 0, 0, 0)))
 $subjLabel.Margin = "0,16,0,8"
-[System.Windows.Controls.Grid]::SetRow($subjLabel, 0)
-[void]$editorGroupGrid.Children.Add($subjLabel)
+[void]$editorHeaderStack.Children.Add($subjLabel)
 
 $Global:SubjectTextBox = New-ThemedTextBox "Review of your Cloud Backup configuration" $false $false 30 14
 $Global:SubjectTextBox.Margin = "0,0,0,8"
-[System.Windows.Controls.Grid]::SetRow($Global:SubjectTextBox, 1)
-[void]$editorGroupGrid.Children.Add($Global:SubjectTextBox)
+[void]$editorHeaderStack.Children.Add($Global:SubjectTextBox)
 
 # Body
 $bodyHeaderPanel = New-Object System.Windows.Controls.StackPanel
@@ -1274,8 +1300,7 @@ $Global:BgToggleBtn.FontSize = 10
 $Global:BgToggleBtn.Add_Click({ Toggle-BodyBackground })
 [void]$bodyHeaderPanel.Children.Add($Global:BgToggleBtn)
 
-[System.Windows.Controls.Grid]::SetRow($bodyHeaderPanel, 2)
-[void]$editorGroupGrid.Children.Add($bodyHeaderPanel)
+[void]$editorHeaderStack.Children.Add($bodyHeaderPanel)
 
 $formatToolbar = New-Object System.Windows.Controls.StackPanel
 $formatToolbar.Orientation = "Horizontal"
@@ -1329,21 +1354,32 @@ $underlineBtn.Margin = "0,0,4,0"
 $underlineBtn.Add_Click({ Apply-EditorFormat "underline" })
 [void]$formatToolbar.Children.Add($underlineBtn)
 
-[System.Windows.Controls.Grid]::SetRow($formatToolbar, 3)
-[void]$editorGroupGrid.Children.Add($formatToolbar)
+# Add toolbar to the header stack instead of a separate grid row to ensure visibility
+[void]$editorHeaderStack.Children.Add($formatToolbar)
+
+# Splitter for the bottom border of the Message Body field
+$Global:BodyBottomSplitter = New-Object System.Windows.Controls.GridSplitter
+$Global:BodyBottomSplitter.Height = 6
+$Global:BodyBottomSplitter.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
+$Global:BodyBottomSplitter.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+$Global:BodyBottomSplitter.Background = ConvertTo-Brush $Config.ThemeColors.AccentBg
+$Global:BodyBottomSplitter.ShowsPreview = $true
+[System.Windows.Controls.Grid]::SetRow($Global:BodyBottomSplitter, 2)
+[void]$editorGroupGrid.Children.Add($Global:BodyBottomSplitter)
 
 $WebViewType = "Microsoft.Web.WebView2.Wpf.WebView2"
 if ($null -ne ($WebViewType -as [type])) {
-    # Check if WebView2 is available
     $Global:BodyWebView = New-Object Microsoft.Web.WebView2.Wpf.WebView2
-    $Global:BodyWebView.MinHeight = 200
-    $Global:BodyWebView.Margin = "0,0,0,8"
-    [System.Windows.Controls.Grid]::SetRow($Global:BodyWebView, 4)
+    $Global:BodyWebView.MinHeight = 100
+    $Global:BodyWebView.Margin = "0"
+    [System.Windows.Controls.Grid]::SetRow($Global:BodyWebView, 1)
     [void]$editorGroupGrid.Children.Add($Global:BodyWebView)
 }
 else {
     $Global:BodyTextBox = New-ThemedTextBox "ERROR: WebView2 libraries not found.`n`n1. Ensure 'Microsoft.Web.WebView2.Wpf.dll' and 'Microsoft.Web.WebView2.Core.dll' are in: `n$PSScriptRoot`n`n2. Right-click both DLLs > Properties > Unblock.`n3. Ensure WebView2 Runtime is installed." $true $true 200 14
-    [System.Windows.Controls.Grid]::SetRow($Global:BodyTextBox, 4)
+    $Global:BodyTextBox.MinHeight = 100
+    $Global:BodyTextBox.Margin = "0"
+    [System.Windows.Controls.Grid]::SetRow($Global:BodyTextBox, 1)
     [void]$editorGroupGrid.Children.Add($Global:BodyTextBox)
 }
 
@@ -1494,14 +1530,14 @@ $settingsPanel.VerticalAlignment = "Center"
 $settingsPanel.HorizontalAlignment = "Right"
 $settingsPanel.Margin = "0,0,12,0" # Margin to separate from Send button
 
-# Delay (ms) section
+# Delay between emails (ms) section
 $waitPanel = New-Object System.Windows.Controls.StackPanel
 $waitPanel.Orientation = "Horizontal"
 $waitPanel.VerticalAlignment = "Center" # Ensure vertical alignment within its own panel
 $waitPanel.HorizontalAlignment = "Right"
 $waitPanel.Margin = "0,0,0,4" # Small margin below delay panel when stacked vertically
 
-$waitLabel = New-ThemedLabel "Delay (ms):" 11
+$waitLabel = New-ThemedLabel "Delay between emails (ms):" 11
 $waitLabel.Margin = "0,2,8,0" # Added 2px top margin for baseline alignment
 $waitLabel.VerticalAlignment = "Center"
 [void]$waitPanel.Children.Add($waitLabel)
@@ -1512,7 +1548,7 @@ $Global:WaitTimeTextBox.VerticalAlignment = "Center"
 $Global:WaitTimeTextBox.ToolTip = "Time to wait between each email (in milliseconds)."
 [void]$waitPanel.Children.Add($Global:WaitTimeTextBox)
 
-# Pause after X messages section
+# Pause after X emails section
 $pausePanel = New-Object System.Windows.Controls.StackPanel
 $pausePanel.Orientation = "Horizontal"
 $pausePanel.VerticalAlignment = "Center" # Ensure vertical alignment within its own panel
@@ -1531,10 +1567,10 @@ $Global:PauseAfterXMessagesCheckBox.Margin = "0,3,4,0" # Added 3px top margin to
 $Global:MessagesThresholdTextBox = New-ThemedTextBox "10" $false $false 24 11
 $Global:MessagesThresholdTextBox.Width = 40
 $Global:MessagesThresholdTextBox.VerticalAlignment = "Center"
-$Global:MessagesThresholdTextBox.ToolTip = "Number of messages after which to pause."
+$Global:MessagesThresholdTextBox.ToolTip = "Number of emails after which to pause."
 [void]$pausePanel.Children.Add($Global:MessagesThresholdTextBox)
 
-$pauseLabel = New-ThemedLabel "messages for" 11
+$pauseLabel = New-ThemedLabel "emails for" 11
 $pauseLabel.Margin = "4,2,4,0" # Added 2px top margin for alignment
 $pauseLabel.VerticalAlignment = "Center"
 [void]$pausePanel.Children.Add($pauseLabel)
