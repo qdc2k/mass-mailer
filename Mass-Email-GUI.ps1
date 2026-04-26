@@ -442,11 +442,46 @@ function Import-Recipients {
         # Task 1: Auto-assign from file directory (Silent)
         $parentDir = Split-Path $FilePath -Parent
         Perform-AutoAssign -MainFolder $parentDir -Silent $true
+        # Automatically resolve missing names from Outlook Address Book
+        Lookup-RecipientNames
         return $true
     }
     catch {
         Log-Entry "Error importing recipients: $_" "Error"
         return $false
+    }
+}
+
+function Lookup-RecipientNames {
+    if ($Global:Recipients.Count -eq 0) { return }
+    
+    Log-Entry "Attempting to resolve names via Outlook Address Book..." "Info"
+    try {
+        $Outlook = New-Object -ComObject Outlook.Application
+        $resolvedCount = 0
+        
+        foreach ($i in 0..($Global:Recipients.Count - 1)) {
+            $recipient = $Global:Recipients[$i]
+            # Only lookup if the name is the email or the default generic name
+            if ($recipient.Name -eq $recipient.Email -or $recipient.Name -eq "New Recipient") {
+                $dummyMail = $Outlook.CreateItem(0)
+                $outRecip = $dummyMail.Recipients.Add($recipient.Email)
+                if ($outRecip.Resolve()) {
+                    $newName = $outRecip.AddressEntry.Name
+                    if ($newName -and $newName -ne $recipient.Email) {
+                        $Global:Recipients[$i].Name = $newName
+                        $resolvedCount++
+                    }
+                }
+                $dummyMail.Close(1) # olDiscard
+            }
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+        Update-RecipientGrid
+        Log-Entry "Resolved $resolvedCount name(s) successfully" "Success"
+    }
+    catch {
+        Log-Entry "Error resolving names: $_" "Error"
     }
 }
 
@@ -585,6 +620,28 @@ function Assign-AttachmentsFromFolders {
     if ($mainFolder) {
         Perform-AutoAssign -MainFolder $mainFolder -Silent $false
     }
+}
+
+function Create-FolderStructure {
+    if ($Global:Recipients.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("Please load recipients first.", "No Recipients", "Ok", "Warning")
+        return
+    }
+    $basePath = Join-Path $PSScriptRoot "attachments"
+    if (-not (Test-Path $basePath)) { New-Item -ItemType Directory -Path $basePath | Out-Null }
+    
+    $created = 0
+    foreach ($recipient in $Global:Recipients) {
+        # Sanitize name for filesystem
+        $safeName = $recipient.Name -replace '[\\\/\:\*\?\"<>\|]', '_'
+        $folderPath = Join-Path $basePath $safeName
+        if (-not (Test-Path $folderPath)) {
+            New-Item -ItemType Directory -Path $folderPath | Out-Null
+            $created++
+        }
+    }
+    Log-Entry "Created $created new folders in $basePath" "Success"
+    [System.Windows.MessageBox]::Show("Folders created for all recipients in:`n$basePath", "Success", "Ok", "Information")
 }
 
 function Save-MailerTemplate {
@@ -738,12 +795,8 @@ function Send-MassEmails {
                 $Mail.Subject = $Global:SubjectTextBox.Text
                 
                 $bodyContent = Get-EmailBody -RecipientName $recipient.Name
-                if ($bodyContent -match "<html|<body|<div") {
-                    $Mail.HTMLBody = $bodyContent
-                }
-                else {
-                    $Mail.Body = $bodyContent
-                }
+                # Always use HTMLBody as the editor content is HTML-based
+                $Mail.HTMLBody = $bodyContent
                 
                 $recip = $Mail.Recipients.Add($recipient.Email)
                 $recip.Type = 1
@@ -1028,6 +1081,11 @@ $autoAssignBtn = New-ThemedButton "Auto-Match" 90 "28" "Scan a folder for subfol
 $autoAssignBtn.Margin = "0,0,4,0"
 $autoAssignBtn.Add_Click({ Assign-AttachmentsFromFolders })
 [void]$attBtns.Children.Add($autoAssignBtn)
+
+$createFoldersBtn = New-ThemedButton "Create Folders" 100 "28" "Create folders for each recipient in the 'attachments' directory."
+$createFoldersBtn.Margin = "0,0,4,0"
+$createFoldersBtn.Add_Click({ Create-FolderStructure })
+[void]$attBtns.Children.Add($createFoldersBtn)
 
 $clearBtn = New-ThemedButton "Clear All" 80 "28" "Remove all attachments."
 $clearBtn.Add_Click({ Clear-AllAttachments })
