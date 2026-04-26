@@ -1294,12 +1294,6 @@ $Global:bodyLabel.FontWeight = "Bold"
 [void]$Global:bodyLabel.SetValue([System.Windows.Controls.Control]::PaddingProperty, (New-Object System.Windows.Thickness(0, 0, 0, 0)))
 [void]$bodyHeaderPanel.Children.Add($Global:bodyLabel)
 
-$Global:BgToggleBtn = New-ThemedButton "Light Preview" 120 24 "Switch between Dark and Light background for the message editor."
-$Global:BgToggleBtn.Margin = "20,0,0,0"
-$Global:BgToggleBtn.FontSize = 10
-$Global:BgToggleBtn.Add_Click({ Toggle-BodyBackground })
-[void]$bodyHeaderPanel.Children.Add($Global:BgToggleBtn)
-
 [void]$editorHeaderStack.Children.Add($bodyHeaderPanel)
 
 $formatToolbar = New-Object System.Windows.Controls.StackPanel
@@ -1353,6 +1347,13 @@ $underlineBtn.FontSize = 12
 $underlineBtn.Margin = "0,0,4,0"
 $underlineBtn.Add_Click({ Apply-EditorFormat "underline" })
 [void]$formatToolbar.Children.Add($underlineBtn)
+
+# Move Light/Dark Preview button to the formatting toolbar with a small offset
+$Global:BgToggleBtn = New-ThemedButton "Light Preview" 120 24 "Switch between Dark and Light background for the message editor."
+$Global:BgToggleBtn.Margin = "30,0,0,0"
+$Global:BgToggleBtn.FontSize = 10
+$Global:BgToggleBtn.Add_Click({ Toggle-BodyBackground })
+[void]$formatToolbar.Children.Add($Global:BgToggleBtn)
 
 # Add toolbar to the header stack instead of a separate grid row to ensure visibility
 [void]$editorHeaderStack.Children.Add($formatToolbar)
