@@ -1050,6 +1050,17 @@ $headerBorder = New-Object System.Windows.Controls.Border
 $headerBorder.Background = ConvertTo-Brush $Config.ThemeColors.AccentBg
 $headerBorder.Padding = "16,12,16,8" # Reduced bottom padding to bring it closer to tabs
 $titleLabel = New-ThemedLabel "Mass Mailer" 24 "Accent"
+
+# Apply a stylish Purple-to-Blue gradient to the title
+$titleBrush = New-Object System.Windows.Media.LinearGradientBrush
+$titleBrush.StartPoint = New-Object System.Windows.Point(0, 0)
+$titleBrush.EndPoint = New-Object System.Windows.Point(1, 0)
+$purpleColor = [System.Windows.Media.ColorConverter]::ConvertFromString("#A4508B") # Stylish Purple
+$blueColor = [System.Windows.Media.ColorConverter]::ConvertFromString($Config.ThemeColors.Accent)
+[void]$titleBrush.GradientStops.Add((New-Object System.Windows.Media.GradientStop($purpleColor, 0.0)))
+[void]$titleBrush.GradientStops.Add((New-Object System.Windows.Media.GradientStop($blueColor, 1.0)))
+$titleLabel.Foreground = $titleBrush
+
 $titleLabel.FontWeight = "Bold"
 $headerBorder.Child = $titleLabel
 
