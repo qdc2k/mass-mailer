@@ -119,6 +119,7 @@ $Global:EmailTemplate = ""
 $Global:LogEntries = New-Object System.Collections.ArrayList
 $Global:ImportedHtmlBody = ""
 $Global:BodyIsWhite = $false
+$Global:SendStatus = "Idle" # Idle, Sending, Paused, Stopped
 
 # ===== FUNCTIONS =====
 function New-ThemedButton {
@@ -349,12 +350,10 @@ function Toggle-BodyBackground {
 }
 
 function Get-EmailBody {
-    param([string]$RecipientName)
+    param([string]$Template, [string]$RecipientName)
     $name = if ($RecipientName) { $RecipientName } else { "Kunde" }
-
-    $body = Get-WebViewContent
-    if ([string]::IsNullOrWhiteSpace($body)) { return "" }
-    return $body -replace '\[NAME\]', $name
+    if ([string]::IsNullOrWhiteSpace($Template)) { return "" }
+    return $Template -replace '\[NAME\]', $name
 }
 
 function Perform-AutoAssign {
@@ -515,7 +514,10 @@ function Update-RecipientGrid {
 
         [void]$displayList.Add($item)
     }
+    # Force a re-bind to ensure UI refresh
+    $Global:RecipientGrid.ItemsSource = $null
     $Global:RecipientGrid.ItemsSource = $displayList
+    $Global:RecipientGrid.UpdateLayout() # Explicitly force layout update
 }
 
 function Add-RecipientManually {
@@ -751,99 +753,166 @@ function Clear-AllAttachments {
 }
 
 function Send-MassEmails {
+    if ($Global:SendStatus -eq "Sending" -or $Global:SendStatus -eq "Paused") {
+        $res = [System.Windows.MessageBox]::Show("Stop the mailing process?", "Confirm Stop", "YesNo", "Warning")
+        if ($res -eq "Yes") { Stop-SendingProcess }
+        return
+    }
+
     if ($Global:Recipients.Count -eq 0) {
         [System.Windows.MessageBox]::Show("No recipients loaded", "Error", "Ok", "Error")
         return
     }
-    
-    $result = [System.Windows.MessageBox]::Show(
-        "Send emails to $($Global:Recipients.Count) recipient(s)?",
-        "Confirm Send",
-        "YesNo",
-        "Question"
-    )
-    
-    if ($result -ne "Yes") { return }
-    
-    $Global:SendButton.IsEnabled = $false
-    $Global:SendButton.Content = "Sending..."
-    
-    Log-Entry "Starting email send process..." "Info"
-    
-    # Determine wait time from UI
-    $userDelay = 500
-    if (-not [int]::TryParse($Global:WaitTimeTextBox.Text, [ref]$userDelay)) { $userDelay = 500 }
-    if ($userDelay -lt 0) { $userDelay = 0 }
 
-    $pauseAfterXMessages = $Global:PauseAfterXMessagesCheckBox.IsChecked
-    $messagesThreshold = 0
-    if ($pauseAfterXMessages) { [int]::TryParse($Global:MessagesThresholdTextBox.Text, [ref]$messagesThreshold) | Out-Null }
-    $pauseDurationMinutes = 0
-    if ($pauseAfterXMessages) { [int]::TryParse($Global:PauseDurationMinutesTextBox.Text, [ref]$pauseDurationMinutes) | Out-Null }
-    $messagesSentInBatch = 0
+    if ([System.Windows.MessageBox]::Show("Send emails to $($Global:Recipients.Count) recipient(s)?", "Confirm", "YesNo", "Question") -ne "Yes") { return }
+
+    # Initialize global state for the timer
+    $Global:SendStatus = "Sending"
+    $Global:CurrentSendIndex = 0
+    $Global:SuccessCount = 0
+    $Global:ErrorCount = 0
+    $Global:BatchSentCount = 0
+    $Global:BodyTemplate = Get-WebViewContent
+    $Global:OutlookApp = New-Object -ComObject Outlook.Application
+    
+    # UI Preparation
+    $Global:SendButton.Content = "Stop Sending"
+    $Global:SendButton.Background = ConvertTo-Brush $Config.ThemeColors.Error
+    $Global:PauseButton.Visibility = [System.Windows.Visibility]::Visible
+    $Global:ProgressContainer.Visibility = [System.Windows.Visibility]::Visible
+    $Global:ProgressText.Content = "0 / $($Global:Recipients.Count)"
+    Log-Entry "Starting email send process..." "Info"
+
+    # Create and start Timer
+    if ($null -eq $Global:SendTimer) {
+        $Global:SendTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $Global:SendTimer.Add_Tick({ Send-NextEmailTick })
+    }
+
+    # Process first email immediately
+    Send-NextEmailTick
+
+    # Set the delay for the next emails and start timer
+    $delay = 500
+    if (-not [int]::TryParse($Global:WaitTimeTextBox.Text, [ref]$delay)) { $delay = 500 }
+    $Global:SendTimer.Interval = [TimeSpan]::FromMilliseconds([Math]::Max(10, $delay))
+    $Global:SendTimer.Start()
+}
+
+function Send-NextEmailTick {
+    if ($Global:SendStatus -ne "Sending") { return }
+
+    if ($Global:CurrentSendIndex -ge $Global:Recipients.Count) {
+        Log-Entry "Send complete - Success: $Global:SuccessCount, Failed: $Global:ErrorCount" "Success"
+        [System.Windows.MessageBox]::Show("Success: $Global:SuccessCount`nFailed: $Global:ErrorCount", "Complete", "Ok", "Information")
+        Stop-SendingProcess
+        return
+    }
+
+    $i = $Global:CurrentSendIndex
+    $recipient = $Global:Recipients[$i]
+    $total = $Global:Recipients.Count
+    $currentDisplay = $i + 1
+    
+    # UI Updates
+    $Global:ProgressText.Content = "$currentDisplay / $total"
+    $Global:ProgressBar.Value = ($currentDisplay / $total) * 100
+    $Global:RecipientGrid.SelectedIndex = $i
+    $Global:RecipientGrid.ScrollIntoView($Global:RecipientGrid.SelectedItem)
+
+    # Set status to "Sending (X/Y)" and refresh grid immediately
+    $recipient.Status = "Sending ($currentDisplay/$total)"
+    Update-RecipientGrid
+
     try {
-        $Outlook = New-Object -ComObject Outlook.Application
+        $Mail = $Global:OutlookApp.CreateItem(0)
+        $Mail.Subject = $Global:SubjectTextBox.Text
+        $Mail.HTMLBody = Get-EmailBody -Template $Global:BodyTemplate -RecipientName $recipient.Name
         
-        $successCount = 0
-        $errorCount = 0
+        $recip = $Mail.Recipients.Add($recipient.Email)
+        $recip.Type = 1
+        $recip.Resolve() | Out-Null
         
-        foreach ($i in 0..($Global:Recipients.Count - 1)) {
-            $recipient = $Global:Recipients[$i]
-            
-            try {
-                $Mail = $Outlook.CreateItem(0)
-                $Mail.Subject = $Global:SubjectTextBox.Text
-                
-                $bodyContent = Get-EmailBody -RecipientName $recipient.Name
-                # Always use HTMLBody as the editor content is HTML-based
-                $Mail.HTMLBody = $bodyContent
-                
-                $recip = $Mail.Recipients.Add($recipient.Email)
-                $recip.Type = 1
-                $recip.Resolve() | Out-Null
-                
-                $attachments = $Global:AttachmentMap[$i]
-                if ($attachments) {
-                    foreach ($filePath in $attachments) {
-                        $Mail.Attachments.Add($filePath) | Out-Null
-                    }
-                }
-                
-                $Mail.Send()
-                
-                $Global:Recipients[$i].Status = "Sent"
-                Log-Entry "Email sent successfully" "Success" $recipient.Email
-                $successCount++
-            }
-            catch {
-                $Global:Recipients[$i].Status = "Failed"
-                Log-Entry "Failed to send: $_" "Error" $recipient.Email
-                $errorCount++
-            }
-            
-            $messagesSentInBatch++
-            # Check for pause condition
-            if ($pauseAfterXMessages -and $messagesThreshold -gt 0 -and $messagesSentInBatch -gt 0 -and ($messagesSentInBatch % $messagesThreshold -eq 0)) {
-                Log-Entry "Pausing for $pauseDurationMinutes minute(s) after $messagesSentInBatch messages." "Info"
-                Start-Sleep -Milliseconds ($pauseDurationMinutes * 60 * 1000)
-                Log-Entry "Resuming email send process." "Info"
-            }
-            
-            Start-Sleep -Milliseconds $userDelay
-        }
+        $attachments = $Global:AttachmentMap[$i]
+        if ($attachments) { foreach ($filePath in $attachments) { $Mail.Attachments.Add($filePath) | Out-Null } }
         
-        Log-Entry "Send complete - Success: $successCount, Failed: $errorCount" "Success"
-        Update-RecipientGrid
-        
-        [System.Windows.MessageBox]::Show("Success: $successCount`nFailed: $errorCount", "Send Complete", "Ok", "Information")
+        $Mail.Send()
+        $recipient.Status = "Sent"
+        Log-Entry "Email $currentDisplay/$total sent" "Success" $recipient.Email
+        $Global:SuccessCount++
     }
     catch {
-        Log-Entry "Critical error: $_" "Error"
-        [System.Windows.MessageBox]::Show("Error: $_", "Error", "Ok", "Error")
+        $recipient.Status = "Failed"
+        Log-Entry "Failed to send: $_" "Error" $recipient.Email
+        $Global:ErrorCount++
     }
-    finally {
-        $Global:SendButton.IsEnabled = $true
-        $Global:SendButton.Content = "Send Emails"
+
+    Update-RecipientGrid
+    $Global:CurrentSendIndex++
+    $Global:BatchSentCount++
+
+    # Handle Automatic Batch Pause
+    $threshold = 0
+    $duration = 0
+    if ($Global:PauseAfterXMessagesCheckBox.IsChecked -and 
+        [int]::TryParse($Global:MessagesThresholdTextBox.Text, [ref]$threshold) -and 
+        [int]::TryParse($Global:PauseDurationMinutesTextBox.Text, [ref]$duration) -and
+        $threshold -gt 0 -and ($Global:BatchSentCount % $threshold -eq 0)) {
+        
+        $Global:SendTimer.Stop()
+        Log-Entry "Batch threshold reached. Pausing for $duration minute(s)..." "Warning"
+        
+        # Resume after $duration minutes
+        $resumeTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $resumeTimer.Interval = [TimeSpan]::FromMinutes($duration)
+        $resumeTimer.Add_Tick({
+                $this.Stop()
+                if ($Global:SendStatus -eq "Sending") { 
+                    Log-Entry "Resuming batch..." "Info"
+                    $Global:SendTimer.Start() 
+                }
+            })
+        $resumeTimer.Start()
+    }
+    else {
+        # Reset interval to user defined delay for the next tick
+        $delay = 500
+        [int]::TryParse($Global:WaitTimeTextBox.Text, [ref]$delay) | Out-Null
+        $Global:SendTimer.Interval = [TimeSpan]::FromMilliseconds([Math]::Max(10, $delay))
+    }
+}
+
+function Stop-SendingProcess {
+    if ($Global:SendTimer) { $Global:SendTimer.Stop() }
+    $Global:SendStatus = "Idle"
+    try {
+        if ($Global:OutlookApp) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Global:OutlookApp) | Out-Null }
+    }
+    catch {}
+    
+    # Reset UI
+    $window.Dispatcher.Invoke({
+            $Global:SendStatus = "Idle"
+            $Global:SendButton.Content = "Send Emails"
+            $Global:SendButton.Background = ConvertTo-Brush $Config.ThemeColors.Success
+            $Global:PauseButton.Visibility = [System.Windows.Visibility]::Collapsed
+            $Global:PauseButton.Content = "Pause"
+            $Global:ProgressContainer.Visibility = [System.Windows.Visibility]::Collapsed
+            $Global:ProgressBar.Value = 0
+            Update-RecipientGrid
+        })
+}
+
+function Toggle-PauseSend {
+    if ($Global:SendStatus -eq "Sending") {
+        $Global:SendStatus = "Paused"
+        $Global:SendTimer.Stop()
+        $Global:PauseButton.Content = "Resume"
+    }
+    elseif ($Global:SendStatus -eq "Paused") {
+        $Global:SendStatus = "Sending"
+        $Global:SendTimer.Start()
+        $Global:PauseButton.Content = "Pause"
     }
 }
 
@@ -1367,13 +1436,44 @@ $tabLog.Content = $sideBorder
 [void]$mainGrid.Children.Add($tabControl)
 [void]$mainGrid.Children.Add($configActionPanel)
 
+# ===== PROGRESS BAR =====
+$Global:ProgressContainer = New-Object System.Windows.Controls.StackPanel
+$Global:ProgressContainer.Orientation = "Horizontal"
+$Global:ProgressContainer.HorizontalAlignment = "Center"
+$Global:ProgressContainer.Visibility = [System.Windows.Visibility]::Collapsed
+$Global:ProgressContainer.Margin = "0"
+
+$Global:ProgressText = New-ThemedLabel "0 / 0" 10
+$Global:ProgressText.Margin = "0,0,10,0"
+$Global:ProgressText.VerticalAlignment = "Center"
+
+$Global:ProgressBar = New-Object System.Windows.Controls.ProgressBar
+$Global:ProgressBar.Height = 2
+$Global:ProgressBar.Width = 200
+$Global:ProgressBar.Background = ConvertTo-Brush "#444444"
+$Global:ProgressBar.Foreground = ConvertTo-Brush $Config.ThemeColors.Accent
+$Global:ProgressBar.BorderThickness = 0
+$Global:ProgressBar.VerticalAlignment = "Center"
+
+[void]$Global:ProgressContainer.Children.Add($Global:ProgressText)
+[void]$Global:ProgressContainer.Children.Add($Global:ProgressBar)
+
 # ===== FOOTER =====
 $footerBorder = New-Object System.Windows.Controls.Border
 $footerBorder.Background = ConvertTo-Brush $Config.ThemeColors.AccentBg
-$footerBorder.Padding = "8,2,8,2"
+$footerBorder.Padding = "8,3,8,3"
+
+$footerMainStack = New-Object System.Windows.Controls.Grid
+[void]$footerMainStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" }))
+[void]$footerMainStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "*" }))
+
+[System.Windows.Controls.Grid]::SetRow($Global:ProgressContainer, 0)
+[void]$footerMainStack.Children.Add($Global:ProgressContainer)
 
 $footerDock = New-Object System.Windows.Controls.DockPanel
 $footerDock.LastChildFill = $false
+$footerDock.Margin = "0"
+[System.Windows.Controls.Grid]::SetRow($footerDock, 1)
 
 $leftFooterPanel = New-Object System.Windows.Controls.StackPanel
 $leftFooterPanel.Orientation = "Horizontal"
@@ -1459,19 +1559,35 @@ $Global:SendButton.Background = ConvertTo-Brush $Config.ThemeColors.Success
 $Global:SendButton.Foreground = ConvertTo-Brush "#FFFFFF"
 $Global:SendButton.Add_Click({ Send-MassEmails })
 
-# Override hover for the Send button to keep it looking distinct
-$Global:SendButton.Add_MouseEnter({ $this.Background = ConvertTo-Brush "#0D610D" })
-$Global:SendButton.Add_MouseLeave({ $this.Background = ConvertTo-Brush $Config.ThemeColors.Success })
+$Global:PauseButton = New-ThemedButton "Pause" 80 52 "Pause the mailing process."
+$Global:PauseButton.Visibility = [System.Windows.Visibility]::Collapsed
+$Global:PauseButton.Margin = "0,0,8,0"
+$Global:PauseButton.Add_Click({ Toggle-PauseSend })
+
+# Function to dynamically update hover colors based on state
+$Global:SendButton.Add_MouseEnter({ 
+        if ($Global:SendStatus -eq "Idle") { $this.Background = ConvertTo-Brush "#0D610D" } 
+        else { $this.Background = ConvertTo-Brush "#8E2026" }
+    })
+
+$Global:SendButton.Add_MouseLeave({ 
+        if ($Global:SendStatus -eq "Idle") { $this.Background = ConvertTo-Brush $Config.ThemeColors.Success } 
+        else { $this.Background = ConvertTo-Brush $Config.ThemeColors.Error }
+        $this.Foreground = ConvertTo-Brush "#FFFFFF"
+    })
 
 [void][System.Windows.Controls.DockPanel]::SetDock($leftFooterPanel, [System.Windows.Controls.Dock]::Left)
 [void][System.Windows.Controls.DockPanel]::SetDock($Global:SendButton, [System.Windows.Controls.Dock]::Right)
+[void][System.Windows.Controls.DockPanel]::SetDock($Global:PauseButton, [System.Windows.Controls.Dock]::Right)
 [void][System.Windows.Controls.DockPanel]::SetDock($settingsPanel, [System.Windows.Controls.Dock]::Right) # Dock settingsPanel to the right of SendButton
 
 [void]$footerDock.Children.Add($leftFooterPanel)
 [void]$footerDock.Children.Add($Global:SendButton)
+[void]$footerDock.Children.Add($Global:PauseButton)
 [void]$footerDock.Children.Add($settingsPanel)
 
-$footerBorder.Child = $footerDock
+$footerBorder.Child = $footerMainStack
+$footerMainStack.Children.Add($footerDock)
 
 [System.Windows.Controls.Grid]::SetRow($footerBorder, 2)
 [System.Windows.Controls.Grid]::SetColumnSpan($footerBorder, 1)
