@@ -1067,19 +1067,11 @@ $configActionPanel.Margin = "0,0,10,0"
 $contentStack = New-Object System.Windows.Controls.Grid # Changed from StackPanel to Grid for flexible layout
 $contentStack.Margin = "8,8,8,8"
 
-# Clean Grid RowDefinitions (8 rows total)
-[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 0: Recipients Label
-[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 1: Buttons Panel
-[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "*"; MinHeight = 150 })) # 2: Recipient Grid
-[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 3: Splitter
-[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "3*"; MinHeight = 180 })) # 4: Editor Container
-
-# Main Section Title
-$recLabelMain = New-ThemedLabel "Recipients & Attachments" 13
-$recLabelMain.FontWeight = "Bold"
-$recLabelMain.Margin = "0,0,0,8"
-[System.Windows.Controls.Grid]::SetRow($recLabelMain, 0)
-[void]$contentStack.Children.Add($recLabelMain)
+# Clean Grid RowDefinitions (4 rows total)
+[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 0: Buttons Panel
+[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "*"; MinHeight = 150 })) # 1: Recipient Grid
+[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 2: Splitter
+[void]$contentStack.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "3*"; MinHeight = 180 })) # 3: Editor Container
 
 $topLoadBtn = New-ThemedButton "LOAD CONFIG" 100 "22" "Load a complete project configuration (Recipients, Attachments, Subject, and Body)."
 $topLoadBtn.FontSize = 9
@@ -1177,7 +1169,7 @@ $clearBtn.Add_Click({ Clear-AllAttachments })
 [System.Windows.Controls.Grid]::SetColumn($attGroup, 1)
 [void]$btnGrid.Children.Add($attGroup)
 
-[System.Windows.Controls.Grid]::SetRow($btnGrid, 1)
+[System.Windows.Controls.Grid]::SetRow($btnGrid, 0)
 [void]$contentStack.Children.Add($btnGrid)
 
 # Grid
@@ -1186,7 +1178,7 @@ $Global:RecipientGrid.MinHeight = 25
 $Global:RecipientGrid.VerticalAlignment = "Stretch"
 
 $col1 = New-Object System.Windows.Controls.DataGridTextColumn
-[System.Windows.Controls.Grid]::SetRow($Global:RecipientGrid, 2)
+[System.Windows.Controls.Grid]::SetRow($Global:RecipientGrid, 1)
 $col1.Header = "Name"
 $col1.Binding = [System.Windows.Data.Binding]"Name"
 $col1.IsReadOnly = $false
@@ -1230,7 +1222,7 @@ $gridSplitter.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretc
 $gridSplitter.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
 $gridSplitter.Background = ConvertTo-Brush $Config.ThemeColors.AccentBg
 $gridSplitter.ShowsPreview = $true
-[System.Windows.Controls.Grid]::SetRow($gridSplitter, 3)
+[System.Windows.Controls.Grid]::SetRow($gridSplitter, 2)
 [void]$contentStack.Children.Add($gridSplitter)
 
 # Handle double-click on Attachment column to trigger picker
@@ -1259,7 +1251,7 @@ $Global:RecipientGrid.Add_CellEditEnding({
 
 # --- Editor Group Grid (Nested) ---
 $editorGroupGrid = New-Object System.Windows.Controls.Grid
-[System.Windows.Controls.Grid]::SetRow($editorGroupGrid, 4)
+[System.Windows.Controls.Grid]::SetRow($editorGroupGrid, 3)
 [void]$contentStack.Children.Add($editorGroupGrid)
 
 [void]$editorGroupGrid.RowDefinitions.Add((New-Object System.Windows.Controls.RowDefinition -Property @{Height = "Auto" })) # 0: Header (Subject/Toolbar)
